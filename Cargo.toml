@@ -1,0 +1,25 @@
+[package]
+name = "tweets-to-discord"
+version = "0.1.0"
+authors = ["Simon Sawert <simon@sawert.se>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+egg-mode = "0.15"
+futures = "0.3"
+tokio = { version = "0.2.8", features = ["full"] }
+serde = "1.0.101"
+serde_derive = "1.0.101"
+serde_yaml = "0.8"
+
+[dependencies.serenity]
+version = "0.10.2"
+default-features = false
+features = [
+    "rustls_tokio_0_2_backend",
+    "client",
+    "gateway",
+    "model",
+]

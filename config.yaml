@@ -1,0 +1,19 @@
+---
+# Set up Twitter OAuth credentials and add those here.
+twitter:
+  follow: RunarSogaard
+  consumer_key: ~
+  consumer_secret: ~
+  access_token: ~
+  access_token_secret: ~
+
+# Set up a Discord bot and add the token here.
+# To get the channel ID where to post tweets, right click on the channel and
+# select `Copy ID`. This required developer mode to be active in the Discord
+# client.
+discord:
+  token: ~
+  channel_id: 111111111111111111
+  header: A tweet from the maniac!
+  time: Time
+  text: Tweet content
