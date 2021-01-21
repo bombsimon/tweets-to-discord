@@ -1,5 +1,7 @@
 use egg_mode::{user::TwitterUser, KeyPair, Response, Token};
+use env_logger::Env;
 use futures::TryStreamExt;
+use log::{error, info};
 use serde::Deserialize;
 use serenity::{
     async_trait,
@@ -68,7 +70,7 @@ impl TwitterService {
             .follow(&[self.user.id])
             .start(&self.token);
 
-        println!("Staring stream, watching {}", self.user.name);
+        info!("Starting stream, watching {}", self.user.name);
 
         stream
             .try_for_each(|m| {
@@ -84,6 +86,8 @@ impl TwitterService {
                     if tweet.user.unwrap().id != self.user.id {
                         return futures::future::ok(());
                     }
+
+                    info!("@{}: {}", self.user.screen_name, t.text);
 
                     // Since the closure isn't async we spawn a green thread with tokio to handle
                     // the asyn call to `send_message`. This will send a message to the configured
@@ -101,7 +105,7 @@ impl TwitterService {
                             })
                             .await
                         {
-                            eprintln!("Error sending message: {:?}", why);
+                            error!("Error sending message: {:?}", why);
                         };
                     });
                 }
@@ -131,6 +135,8 @@ impl EventHandler for Handler {
 
 #[tokio::main]
 async fn main() {
+    env_logger::Builder::from_env(Env::default().default_filter_or("tweets_to_discord")).init();
+
     let args: Vec<String> = std::env::args().collect();
     let config_file = match args.len() {
         1 => "config.yaml",
@@ -150,6 +156,6 @@ async fn main() {
         .expect("Error creating client");
 
     if let Err(why) = client.start().await {
-        eprintln!("Client error: {:?}", why);
+        error!("Client error: {:?}", why);
     }
 }
