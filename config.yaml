@@ -18,4 +18,5 @@ discord:
   time: Time
   text: Tweet content
   reply: Replying to
+  quote: Quoted
   url: Tweet URL

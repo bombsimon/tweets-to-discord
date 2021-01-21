@@ -28,6 +28,7 @@ struct DiscordConfig {
     time: String,
     text: String,
     reply: String,
+    quote: String,
     url: String,
 }
 
@@ -120,6 +121,10 @@ impl TwitterService {
 
                                     if let Some(r) = reply {
                                         e.field(config.reply, r, false);
+                                    }
+
+                                    if let Some(q) = t.quoted_status {
+                                        e.field(config.quote, q.text, false);
                                     }
 
                                     e.field(config.url, tweet_url, false);
