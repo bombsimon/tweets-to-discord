@@ -116,7 +116,13 @@ impl TwitterService {
                             .send_message(&c, |m| {
                                 m.embed(|e| {
                                     e.title(config.header);
-                                    e.field(config.time, t.created_at, false);
+                                    e.field(
+                                        config.time,
+                                        t.created_at
+                                            .with_timezone(&chrono::Local)
+                                            .format("%Y-%m-%d %H:%M:%S"),
+                                        false,
+                                    );
                                     e.field(config.text, t.text, false);
 
                                     if let Some(r) = reply {
