@@ -89,6 +89,11 @@ impl TwitterService {
 
                     info!("@{}: {}", self.user.screen_name, t.text);
 
+                    let tweet_url = format!(
+                        "https://twitter.com/{}/status/{}",
+                        self.user.screen_name, t.id
+                    );
+
                     // Since the closure isn't async we spawn a green thread with tokio to handle
                     // the asyn call to `send_message`. This will send a message to the configured
                     // Discord channel as a block message. If it fails to send, the error will be
@@ -99,7 +104,11 @@ impl TwitterService {
                                 m.embed(|e| {
                                     e.title(config.header);
                                     e.field(config.time, t.created_at, false);
-                                    e.field(config.text, t.text, false);
+                                    e.field(
+                                        config.text,
+                                        format!("{}\n\n{}", t.text, tweet_url),
+                                        false,
+                                    );
                                     e
                                 })
                             })
