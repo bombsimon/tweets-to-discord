@@ -17,3 +17,5 @@ discord:
   header: A tweet from the maniac!
   time: Time
   text: Tweet content
+  reply: Replying to
+  url: Tweet URL

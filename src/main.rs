@@ -27,6 +27,8 @@ struct DiscordConfig {
     header: String,
     time: String,
     text: String,
+    reply: String,
+    url: String,
 }
 
 /// Config represents the full configuration file with all configuration.
@@ -80,6 +82,7 @@ impl TwitterService {
                     let t = tweet.clone();
                     let c = ctx.clone();
                     let config = config.clone();
+                    let tkn = self.token.clone();
 
                     // We only care about tweets sent from the actual user, not any mention from
                     // anyone.
@@ -99,16 +102,28 @@ impl TwitterService {
                     // Discord channel as a block message. If it fails to send, the error will be
                     // printed to the screen.
                     tokio::spawn(async move {
+                        let reply = match t.in_reply_to_status_id {
+                            Some(reply_id) => {
+                                let reply_tweet =
+                                    egg_mode::tweet::show(reply_id, &tkn).await.unwrap();
+                                Some(reply_tweet.text.clone())
+                            }
+                            None => None,
+                        };
+
                         if let Err(why) = ChannelId(config.channel_id)
                             .send_message(&c, |m| {
                                 m.embed(|e| {
                                     e.title(config.header);
                                     e.field(config.time, t.created_at, false);
-                                    e.field(
-                                        config.text,
-                                        format!("{}\n\n{}", t.text, tweet_url),
-                                        false,
-                                    );
+                                    e.field(config.text, t.text, false);
+
+                                    if let Some(r) = reply {
+                                        e.field(config.reply, r, false);
+                                    }
+
+                                    e.field(config.url, tweet_url, false);
+
                                     e
                                 })
                             })
