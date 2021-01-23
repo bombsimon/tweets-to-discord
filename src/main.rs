@@ -1,4 +1,4 @@
-use egg_mode::{user::TwitterUser, KeyPair, Response, Token};
+use egg_mode::{tweet::Tweet, user::TwitterUser, KeyPair, Response, Token};
 use env_logger::Env;
 use futures::TryStreamExt;
 use log::{error, info};
@@ -78,77 +78,64 @@ impl TwitterService {
         stream
             .try_for_each(|m| {
                 if let egg_mode::stream::StreamMessage::Tweet(tweet) = m {
-                    // TODO: Figure out how to handle the move of these variables without creating
-                    // a copy.
-                    let t = tweet.clone();
-                    let c = ctx.clone();
-                    let config = config.clone();
-                    let tkn = self.token.clone();
-
-                    // We only care about tweets sent from the actual user, not any mention from
-                    // anyone.
-                    if tweet.user.unwrap().id != self.user.id {
-                        return futures::future::ok(());
-                    }
-
-                    info!("@{}: {}", self.user.screen_name, t.text);
-
-                    let tweet_url = format!(
-                        "https://twitter.com/{}/status/{}",
-                        self.user.screen_name, t.id
-                    );
-
-                    // Since the closure isn't async we spawn a green thread with tokio to handle
-                    // the asyn call to `send_message`. This will send a message to the configured
-                    // Discord channel as a block message. If it fails to send, the error will be
-                    // printed to the screen.
-                    tokio::spawn(async move {
-                        let reply = match t.in_reply_to_status_id {
-                            Some(reply_id) => {
-                                let reply_tweet =
-                                    egg_mode::tweet::show(reply_id, &tkn).await.unwrap();
-                                Some(reply_tweet.text.clone())
-                            }
-                            None => None,
-                        };
-
-                        if let Err(why) = ChannelId(config.channel_id)
-                            .send_message(&c, |m| {
-                                m.embed(|e| {
-                                    e.title(config.header);
-                                    e.field(
-                                        config.time,
-                                        t.created_at
-                                            .with_timezone(&chrono::Local)
-                                            .format("%Y-%m-%d %H:%M:%S"),
-                                        false,
-                                    );
-                                    e.field(config.text, t.text, false);
-
-                                    if let Some(r) = reply {
-                                        e.field(config.reply, r, false);
-                                    }
-
-                                    if let Some(q) = t.quoted_status {
-                                        e.field(config.quote, q.text, false);
-                                    }
-
-                                    e.field(config.url, tweet_url, false);
-
-                                    e
-                                })
-                            })
-                            .await
-                        {
-                            error!("Error sending message: {:?}", why);
-                        };
-                    });
+                    info!("@{}: {}", self.user.screen_name, tweet.text);
+                    futures::executor::block_on(self.handle_message(&ctx, &config, tweet));
                 }
 
                 futures::future::ok(())
             })
             .await
             .expect("Stream error");
+    }
+
+    async fn handle_message(&self, ctx: &Context, config: &DiscordConfig, tweet: Tweet) {
+        // We only care about tweets sent from the actual user, not any mention from
+        // anyone.
+        if tweet.user.as_ref().unwrap().id != self.user.id {
+            return;
+        }
+
+        let tweet_url = format!(
+            "https://twitter.com/{}/status/{}",
+            self.user.screen_name, tweet.id
+        );
+
+        // Since the closure isn't async we spawn a green thread with tokio to handle
+        // the async call to `send_message`. This will send a message to the configured
+        // Discord channel as a block message. If it fails to send, the error will be
+        // printed to the screen.
+        let reply = match tweet.in_reply_to_status_id {
+            Some(reply_id) => {
+                let reply_tweet = egg_mode::tweet::show(reply_id, &self.token).await.unwrap();
+                Some(reply_tweet.text.clone())
+            }
+            None => None,
+        };
+
+        let result = ChannelId(config.channel_id)
+            .send_message(&ctx, |m| {
+                m.embed(|e| {
+                    e.title(&config.header);
+                    e.field(&config.text, tweet.text, false);
+
+                    if let Some(r) = reply {
+                        e.field(&config.reply, r, false);
+                    }
+
+                    if let Some(q) = tweet.quoted_status {
+                        e.field(&config.quote, q.text, false);
+                    }
+
+                    e.field(&config.url, tweet_url, false);
+
+                    e
+                })
+            })
+            .await;
+
+        if let Err(why) = result {
+            error!("Error sending message: {:?}", why);
+        };
     }
 }
 
