@@ -1,7 +1,7 @@
 use egg_mode::{tweet::Tweet, user::TwitterUser, KeyPair, Response, Token};
 use env_logger::Env;
 use futures::TryStreamExt;
-use log::{error, info};
+use log::{error, info, trace};
 use serde::Deserialize;
 use serenity::{
     async_trait,
@@ -91,7 +91,14 @@ impl TwitterService {
     async fn handle_message(&self, ctx: &Context, config: &DiscordConfig, tweet: Tweet) {
         // We only care about tweets sent from the actual user, not any mention from
         // anyone.
-        if tweet.user.as_ref().unwrap().id != self.user.id {
+        let tweeting_user = tweet.user.as_ref().unwrap();
+
+        if tweeting_user.id != self.user.id {
+            trace!(
+                "Tweet detected, was from {}, not {}",
+                tweeting_user.screen_name,
+                self.user.screen_name
+            );
             return;
         }
 
@@ -113,7 +120,7 @@ impl TwitterService {
         };
 
         let result = ChannelId(config.channel_id)
-            .send_message(&ctx, |m| {
+            .send_message(ctx, |m| {
                 m.embed(|e| {
                     e.title(&config.header);
                     e.field(&config.text, tweet.text, false);
@@ -135,6 +142,8 @@ impl TwitterService {
 
         if let Err(why) = result {
             error!("Error sending message: {:?}", why);
+        } else {
+            trace!("Sent message to {} successfully", config.channel_id);
         };
     }
 }
