@@ -79,7 +79,15 @@ impl TwitterService {
             .try_for_each(|m| {
                 if let egg_mode::stream::StreamMessage::Tweet(tweet) = m {
                     info!("@{}: {}", self.user.screen_name, tweet.text);
-                    futures::executor::block_on(self.handle_message(&ctx, &config, tweet));
+
+                    let token = self.token.clone();
+                    let user = self.user.clone();
+                    let ctx = ctx.clone();
+                    let config = config.clone();
+
+                    tokio::spawn(async move {
+                        TwitterService::handle_message(token, user, ctx, config, tweet).await;
+                    });
                 }
 
                 futures::future::ok(())
@@ -88,23 +96,29 @@ impl TwitterService {
             .expect("Stream error");
     }
 
-    async fn handle_message(&self, ctx: &Context, config: &DiscordConfig, tweet: Tweet) {
+    async fn handle_message(
+        token: Token,
+        user: TwitterUser,
+        ctx: Context,
+        config: DiscordConfig,
+        tweet: Tweet,
+    ) {
         // We only care about tweets sent from the actual user, not any mention from
         // anyone.
         let tweeting_user = tweet.user.as_ref().unwrap();
 
-        if tweeting_user.id != self.user.id {
+        if tweeting_user.id != user.id {
             trace!(
                 "Tweet detected, was from {}, not {}",
                 tweeting_user.screen_name,
-                self.user.screen_name
+                user.screen_name
             );
             return;
         }
 
         let tweet_url = format!(
             "https://twitter.com/{}/status/{}",
-            self.user.screen_name, tweet.id
+            user.screen_name, tweet.id
         );
 
         // Since the closure isn't async we spawn a green thread with tokio to handle
@@ -113,7 +127,7 @@ impl TwitterService {
         // printed to the screen.
         let reply = match tweet.in_reply_to_status_id {
             Some(reply_id) => {
-                let reply_tweet = egg_mode::tweet::show(reply_id, &self.token).await.unwrap();
+                let reply_tweet = egg_mode::tweet::show(reply_id, &token).await.unwrap();
                 Some(reply_tweet.text.clone())
             }
             None => None,
