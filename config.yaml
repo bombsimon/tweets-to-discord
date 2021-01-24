@@ -15,7 +15,6 @@ discord:
   token: ~
   channel_id: 111111111111111111
   header: A tweet from the maniac!
-  time: Time
   text: Tweet content
   reply: Replying to
   quote: Quoted

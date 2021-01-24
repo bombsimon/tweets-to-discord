@@ -25,7 +25,6 @@ struct DiscordConfig {
     token: String,
     channel_id: u64,
     header: String,
-    time: String,
     text: String,
     reply: String,
     quote: String,
