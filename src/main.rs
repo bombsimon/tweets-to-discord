@@ -69,65 +69,43 @@ impl TwitterService {
     /// passed comes from the Discord ready handler so this can be used when sending tweets to
     /// Discord.
     async fn stream(&self, ctx: Context, config: &DiscordConfig) {
-        let stream = egg_mode::stream::filter()
+        let mut stream = egg_mode::stream::filter()
             .follow(&[self.user.id])
             .start(&self.token);
 
-        info!("Starting stream, watching {}", self.user.name);
+        info!("starting stream, watching {}", self.user.name);
 
-        stream
-            .try_for_each(|m| {
-                if let egg_mode::stream::StreamMessage::Tweet(tweet) = m {
-                    info!("@{}: {}", self.user.screen_name, tweet.text);
-
-                    let token = self.token.clone();
-                    let user = self.user.clone();
-                    let ctx = ctx.clone();
-                    let config = config.clone();
-
-                    tokio::spawn(async move {
-                        TwitterService::handle_message(token, user, ctx, config, tweet).await;
-                    });
-                }
-
-                futures::future::ok(())
-            })
-            .await
-            .expect("Stream error");
+        while let Ok(m) = stream.try_next().await {
+            if let Some(egg_mode::stream::StreamMessage::Tweet(tweet)) = m {
+                trace!("tweet received in stream");
+                self.handle_message(&ctx, &config, tweet).await;
+            }
+        }
     }
 
-    async fn handle_message(
-        token: Token,
-        user: TwitterUser,
-        ctx: Context,
-        config: DiscordConfig,
-        tweet: Tweet,
-    ) {
-        // We only care about tweets sent from the actual user, not any mention from
-        // anyone.
+    async fn handle_message(&self, ctx: &Context, config: &DiscordConfig, tweet: Tweet) {
         let tweeting_user = tweet.user.as_ref().unwrap();
 
-        if tweeting_user.id != user.id {
+        if tweeting_user.id != self.user.id {
             trace!(
-                "Tweet detected, was from {}, not {}",
+                "Tweet matched filter but was from {}, not {}. Will not post",
                 tweeting_user.screen_name,
-                user.screen_name
+                self.user.screen_name
             );
             return;
         }
 
         let tweet_url = format!(
             "https://twitter.com/{}/status/{}",
-            user.screen_name, tweet.id
+            self.user.screen_name, tweet.id
         );
 
-        // Since the closure isn't async we spawn a green thread with tokio to handle
-        // the async call to `send_message`. This will send a message to the configured
-        // Discord channel as a block message. If it fails to send, the error will be
-        // printed to the screen.
+        info!("@{}: {} ({})", self.user.screen_name, tweet.text, tweet_url);
+
+        // Since the embed closure isn't async we fetch the tweet replied to if this is a reply.
         let reply = match tweet.in_reply_to_status_id {
             Some(reply_id) => {
-                let reply_tweet = egg_mode::tweet::show(reply_id, &token).await.unwrap();
+                let reply_tweet = egg_mode::tweet::show(reply_id, &self.token).await.unwrap();
                 Some(reply_tweet.text.clone())
             }
             None => None,
@@ -157,7 +135,7 @@ impl TwitterService {
         if let Err(why) = result {
             error!("Error sending message: {:?}", why);
         } else {
-            trace!("Sent message to {} successfully", config.channel_id);
+            trace!("sent message to {} successfully", config.channel_id);
         };
     }
 }
