@@ -1,11 +1,15 @@
-use egg_mode::{tweet::Tweet, user::TwitterUser, KeyPair, Response, Token};
+use egg_mode::{
+    tweet::{DraftTweet, Tweet},
+    user::TwitterUser,
+    KeyPair, Response, Token,
+};
 use env_logger::Env;
 use futures::TryStreamExt;
 use log::{error, info, trace};
 use serde::Deserialize;
 use serenity::{
     async_trait,
-    model::{gateway::Ready, id::ChannelId},
+    model::{channel::Embed, gateway::Ready, id::ChannelId, prelude::Message},
     prelude::*,
 };
 
@@ -29,6 +33,7 @@ struct DiscordConfig {
     reply: String,
     quote: String,
     url: String,
+    tweet_replies: bool,
 }
 
 /// Config represents the full configuration file with all configuration.
@@ -82,6 +87,8 @@ impl TwitterService {
         }
     }
 
+    /// Handle the message that got received in the Twitter stream. If the tweet follows required
+    /// criterias, an embedded message will be constructed and posted to those channels configured.
     async fn handle_message(&self, ctx: &Context, config: &DiscordConfig, tweet: Tweet) {
         let tweeting_user = tweet.user.as_ref().unwrap();
 
@@ -99,7 +106,7 @@ impl TwitterService {
             self.user.screen_name, tweet.id
         );
 
-        info!("@{}: {} ({})", self.user.screen_name, tweet.text, tweet_url);
+        trace!("@{}: {} ({})", self.user.screen_name, tweet.text, tweet_url);
 
         // Since the embed closure isn't async we fetch the tweet replied to if this is a reply.
         let reply = match tweet.in_reply_to_status_id {
@@ -132,7 +139,7 @@ impl TwitterService {
             .await;
 
         if let Err(why) = result {
-            error!("Error sending message: {:?}", why);
+            error!("error sending message: {:?}", why);
         } else {
             trace!("sent message to {} successfully", config.channel_id);
         };
@@ -145,6 +152,62 @@ struct Handler {
     config: DiscordConfig,
 }
 
+impl Handler {
+    fn tweet_id_from_embeds(&self, embeds: &[Embed]) -> Option<u64> {
+        for embed in embeds {
+            for field in &embed.fields {
+                if field.name == self.config.url {
+                    if let Some(p) = std::path::Path::new(&field.value).file_name() {
+                        match p.to_str().unwrap_or("").parse::<u64>() {
+                            Ok(tweet_id) => {
+                                return Some(tweet_id);
+                            }
+                            _ => return None,
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Parse a Discord message containing a tweet. If it's a reply to the bot itself, check if
+    /// it's a message with embedded data and if it's possible to extract a tweet ID. If this is
+    /// possible, send the reply to the tweet.
+    async fn reply_to_tweet(&self, reply: &Box<Message>, ctx: &Context, msg: &Message) {
+        if reply.author.id != ctx.cache.current_user_id().await {
+            return;
+        }
+
+        if let Some(tweet_id) = self.tweet_id_from_embeds(&reply.embeds) {
+            let draft = DraftTweet::new(format!(
+                "@{} {}",
+                self.twitter_service.user.screen_name, msg.content
+            ))
+            .in_reply_to(tweet_id);
+
+            let tweet = draft.send(&self.twitter_service.token).await;
+
+            match tweet {
+                Ok(t) => {
+                    let tweet_url = format!(
+                        "https://twitter.com/{}/status/{}",
+                        t.user.as_ref().unwrap().screen_name,
+                        t.id
+                    );
+
+                    let _ = msg
+                        .channel_id
+                        .say(&ctx, format!("Postet reply: {}", tweet_url))
+                        .await;
+                }
+                Err(why) => error!("failed to post tweet: {}", why),
+            }
+        }
+    }
+}
+
 #[async_trait]
 impl EventHandler for Handler {
     /// We only implement ready since it's called whenever we successfully start the Discord
@@ -152,6 +215,15 @@ impl EventHandler for Handler {
     /// handler as channel destination.
     async fn ready(&self, ctx: Context, _ready: Ready) {
         self.twitter_service.stream(ctx, &self.config).await;
+    }
+
+    /// Check the message and see if it's a reply to ourself.
+    async fn message(&self, ctx: Context, msg: Message) {
+        if self.config.tweet_replies {
+            if let Some(reply) = &msg.referenced_message {
+                self.reply_to_tweet(&reply, &ctx, &msg).await;
+            }
+        }
     }
 }
 
@@ -175,9 +247,9 @@ async fn main() {
             config: config.discord,
         })
         .await
-        .expect("Error creating client");
+        .expect("error creating client");
 
     if let Err(why) = client.start().await {
-        error!("Client error: {:?}", why);
+        error!("client error: {:?}", why);
     }
 }

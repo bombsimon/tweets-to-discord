@@ -19,3 +19,4 @@ discord:
   reply: Replying to
   quote: Quoted
   url: Tweet URL
+  tweet_replies: false
