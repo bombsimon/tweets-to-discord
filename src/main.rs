@@ -9,6 +9,7 @@ use log::{error, info, trace};
 use serde::Deserialize;
 use serenity::{
     async_trait,
+    builder::CreateMessage,
     model::{channel::Embed, gateway::Ready, id::ChannelId, prelude::Message},
     prelude::*,
 };
@@ -28,12 +29,27 @@ struct TwitterConfig {
 struct DiscordConfig {
     token: String,
     channel_id: u64,
+    tweet_replies: bool,
+    tweet_as_user: bool,
+    embed: DiscordConfigEmbed,
+    plaintext: DiscordConfigPlaintext,
+}
+
+#[derive(Clone, Deserialize)]
+struct DiscordConfigEmbed {
     header: String,
     text: String,
     reply: String,
     quote: String,
     url: String,
-    tweet_replies: bool,
+}
+
+#[derive(Clone, Deserialize)]
+struct DiscordConfigPlaintext {
+    reply_prefix: String,
+    reply_postfix: String,
+    quote_prefix: String,
+    quote_postfix: String,
 }
 
 /// Config represents the full configuration file with all configuration.
@@ -119,22 +135,13 @@ impl TwitterService {
 
         let result = ChannelId(config.channel_id)
             .send_message(ctx, |m| {
-                m.embed(|e| {
-                    e.title(&config.header);
-                    e.field(&config.text, tweet.text, false);
+                if config.tweet_as_user {
+                    self.create_plaintext_message(m, &config, tweet, reply);
+                } else {
+                    self.create_embeded_message(m, &config, tweet, tweet_url, reply);
+                }
 
-                    if let Some(r) = reply {
-                        e.field(&config.reply, r, false);
-                    }
-
-                    if let Some(q) = tweet.quoted_status {
-                        e.field(&config.quote, q.text, false);
-                    }
-
-                    e.field(&config.url, tweet_url, false);
-
-                    e
-                })
+                m
             })
             .await;
 
@@ -143,6 +150,62 @@ impl TwitterService {
         } else {
             trace!("sent message to {} successfully", config.channel_id);
         };
+    }
+
+    /// Create a plaintext message to write from the bot just like if it would've written what's
+    /// happened on Twitter straight to the chat. This will make it appear a bit more like it's a
+    /// human writing the post.
+    fn create_plaintext_message(
+        &self,
+        m: &mut CreateMessage,
+        config: &DiscordConfig,
+        tweet: Tweet,
+        reply: Option<String>,
+    ) {
+        let mut content = "".to_string();
+        if let Some(r) = reply {
+            content.push_str(format!("{}\n", &config.plaintext.reply_prefix).as_str());
+            content.push_str(format!("> {}\n", r).as_str());
+            content.push_str(format!("{}\n", &config.plaintext.reply_postfix).as_str());
+        }
+
+        if let Some(q) = tweet.quoted_status {
+            content.push_str(format!("{}\n", &config.plaintext.quote_prefix).as_str());
+            content.push_str(format!("> {}\n", q.text).as_str());
+            content.push_str(format!("{}\n", &config.plaintext.quote_postfix).as_str());
+        }
+
+        content.push_str(tweet.text.as_str());
+
+        m.content(content);
+    }
+
+    /// Create an embedded message to post to Discord. This message will hold headers and content
+    /// and it will be obvious that it's a bot that posted it.
+    fn create_embeded_message(
+        &self,
+        m: &mut CreateMessage,
+        config: &DiscordConfig,
+        tweet: Tweet,
+        tweet_url: String,
+        reply: Option<String>,
+    ) {
+        m.embed(|e| {
+            e.title(&config.embed.header);
+            e.field(&config.embed.text, tweet.text, false);
+
+            if let Some(r) = reply {
+                e.field(&config.embed.reply, r, false);
+            }
+
+            if let Some(q) = tweet.quoted_status {
+                e.field(&config.embed.quote, q.text, false);
+            }
+
+            e.field(&config.embed.url, tweet_url, false);
+
+            e
+        });
     }
 }
 
@@ -156,7 +219,7 @@ impl Handler {
     fn tweet_id_from_embeds(&self, embeds: &[Embed]) -> Option<u64> {
         for embed in embeds {
             for field in &embed.fields {
-                if field.name == self.config.url {
+                if field.name == self.config.embed.url {
                     if let Some(p) = std::path::Path::new(&field.value).file_name() {
                         match p.to_str().unwrap_or("").parse::<u64>() {
                             Ok(tweet_id) => {

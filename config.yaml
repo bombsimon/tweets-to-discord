@@ -14,9 +14,16 @@ twitter:
 discord:
   token: ~
   channel_id: 111111111111111111
-  header: A tweet from the maniac!
-  text: Tweet content
-  reply: Replying to
-  quote: Quoted
-  url: Tweet URL
   tweet_replies: false
+  tweet_as_user: true
+  embed:
+    header: A tweet was posted!
+    text: Tweet content
+    reply: Replying to
+    quote: Quoted
+    url: Tweet URL
+  plaintext:
+    reply_prefix: 'Someone wrote this:'
+    reply_postfix: 'So I was like:'
+    quote_prefix: 'Look what I saw on Twitter!'
+    quote_postfix: 'I''m tottaly like:'
