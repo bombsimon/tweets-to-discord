@@ -216,23 +216,24 @@ struct Handler {
 }
 
 impl Handler {
-    fn tweet_id_from_embeds(&self, embeds: &[Embed]) -> Option<u64> {
+    /// Check all embedded contents and for each one check every field. If the field is named
+    /// what's configured as the URL, try to extract the Tweet ID (last part) and return it as u64.
+    fn tweet_id_from_embeds(&self, embeds: &[Embed]) -> Result<u64, std::io::ErrorKind> {
         for embed in embeds {
             for field in &embed.fields {
                 if field.name == self.config.embed.url {
-                    if let Some(p) = std::path::Path::new(&field.value).file_name() {
-                        match p.to_str().unwrap_or("").parse::<u64>() {
-                            Ok(tweet_id) => {
-                                return Some(tweet_id);
-                            }
-                            _ => return None,
-                        }
-                    }
+                    return Ok(std::path::Path::new(&field.value)
+                        .file_name()
+                        .ok_or(std::io::ErrorKind::InvalidInput)?
+                        .to_str()
+                        .ok_or(std::io::ErrorKind::InvalidInput)?
+                        .parse::<u64>()
+                        .or(Err(std::io::ErrorKind::InvalidData)))?;
                 }
             }
         }
 
-        None
+        Err(std::io::ErrorKind::NotFound)
     }
 
     /// Parse a Discord message containing a tweet. If it's a reply to the bot itself, check if
@@ -243,7 +244,7 @@ impl Handler {
             return;
         }
 
-        if let Some(tweet_id) = self.tweet_id_from_embeds(&reply.embeds) {
+        if let Ok(tweet_id) = self.tweet_id_from_embeds(&reply.embeds) {
             let draft = DraftTweet::new(format!(
                 "@{} {}",
                 self.twitter_service.user.screen_name, msg.content
