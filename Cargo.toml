@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 chrono = "0.4"
-egg-mode = { git = "https://github.com/RAnders00/egg-mode", branch = "tokio-v1.0-upgrade" }
+egg-mode = "0.16"
 env_logger = "0.8.2"
 futures = "0.3"
 log = "0.4"
