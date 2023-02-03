@@ -98,7 +98,7 @@ impl TwitterService {
         while let Ok(m) = stream.try_next().await {
             if let Some(egg_mode::stream::StreamMessage::Tweet(tweet)) = m {
                 trace!("tweet received in stream");
-                self.handle_message(&ctx, &config, tweet).await;
+                self.handle_message(&ctx, config, tweet).await;
             }
         }
     }
@@ -136,9 +136,9 @@ impl TwitterService {
         let result = ChannelId(config.channel_id)
             .send_message(ctx, |m| {
                 if config.tweet_as_user {
-                    self.create_plaintext_message(m, &config, tweet, reply);
+                    self.create_plaintext_message(m, config, tweet, reply);
                 } else {
-                    self.create_embeded_message(m, &config, tweet, tweet_url, reply);
+                    self.create_embeded_message(m, config, tweet, tweet_url, reply);
                 }
 
                 m
@@ -239,7 +239,7 @@ impl Handler {
     /// Parse a Discord message containing a tweet. If it's a reply to the bot itself, check if
     /// it's a message with embedded data and if it's possible to extract a tweet ID. If this is
     /// possible, send the reply to the tweet.
-    async fn reply_to_tweet(&self, reply: &Box<Message>, ctx: &Context, msg: &Message) {
+    async fn reply_to_tweet(&self, reply: &Message, ctx: &Context, msg: &Message) {
         if reply.author.id != ctx.cache.current_user_id().await {
             return;
         }
@@ -285,7 +285,7 @@ impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
         if self.config.tweet_replies {
             if let Some(reply) = &msg.referenced_message {
-                self.reply_to_tweet(&reply, &ctx, &msg).await;
+                self.reply_to_tweet(reply, &ctx, &msg).await;
             }
         }
     }
